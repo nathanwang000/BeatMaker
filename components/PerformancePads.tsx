@@ -7,25 +7,29 @@ interface PerformancePadsProps {
   onTriggerPad: (trackIdx: number) => void;
 }
 
-const PerformancePads: React.FC<PerformancePadsProps> = ({ tracks, onTriggerPad }) => {
+const PerformancePads: React.FC<PerformancePadsProps> = React.memo(({ tracks, onTriggerPad }) => {
   return (
     <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
       {tracks.map((track, idx) => {
-        // Handle touch events for lower latency on mobile
-        const handleInteraction = (e: React.MouseEvent | React.TouchEvent) => {
-          e.preventDefault();
+        // Unified pointer handling for high-performance touch and mouse interaction
+        const handlePointerDown = (e: React.PointerEvent) => {
+          // Prevent browser scrolling or multi-touch gestures from interfering with the pad
+          if (e.pointerType === 'touch') {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+          }
           onTriggerPad(idx);
         };
 
         return (
           <button
             key={track.id}
-            onMouseDown={handleInteraction}
-            onTouchStart={handleInteraction}
+            onPointerDown={handlePointerDown}
+            // touch-action: none is critical to prevent ghost clicks and gesture delays
+            style={{ touchAction: 'none' }}
             className={`
               relative group aspect-square rounded-2xl border border-slate-800 bg-slate-900/40 
               flex flex-col items-center justify-center gap-2 transition-all duration-75
-              active:scale-95 active:brightness-125
+              active:scale-95 active:brightness-125 select-none
             `}
           >
             {/* Visual glow on interaction */}
@@ -49,6 +53,8 @@ const PerformancePads: React.FC<PerformancePadsProps> = ({ tracks, onTriggerPad 
       })}
     </div>
   );
-};
+});
+
+PerformancePads.displayName = 'PerformancePads';
 
 export default PerformancePads;

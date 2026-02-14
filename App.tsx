@@ -10,6 +10,8 @@ import { exportToMIDI } from './services/midiService';
 import { generateAIPattern } from './services/geminiService';
 import { Music, AlertCircle, X, Sparkles, Loader2, Keyboard, Zap, Smartphone } from 'lucide-react';
 
+const DEBOUNCE_MS = 65; // Minimum interval (ms) to filter out ghost-taps/jitter
+
 const App: React.FC = () => {
   const [tracks, setTracks] = useState<Track[]>(INITIAL_TRACKS);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -26,6 +28,11 @@ const App: React.FC = () => {
   const lastStepScheduledRef = useRef<number>(-1);
   const tracksRef = useRef<Track[]>(INITIAL_TRACKS);
   const bpmRef = useRef<number>(DEFAULT_BPM);
+  
+  // High-frequency refs for stable interaction callbacks
+  const isPlayingRef = useRef(false);
+  const currentStepRef = useRef(0);
+  const lastTriggerTimesRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     tracksRef.current = tracks;
@@ -34,6 +41,14 @@ const App: React.FC = () => {
   useEffect(() => {
     bpmRef.current = bpm;
   }, [bpm]);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    currentStepRef.current = currentStep;
+  }, [currentStep]);
 
   const handleDeleteFreeformNote = useCallback((trackIdx: number, noteId: string) => {
     setTracks(prev => {
@@ -87,25 +102,34 @@ const App: React.FC = () => {
     }));
   };
 
+  // Stable callback that doesn't re-mount listeners on every clock tick
   const recordNote = useCallback((trackIdx: number) => {
+    const trackId = tracksRef.current[trackIdx].id;
+    const nowMs = Date.now();
+    
+    // Anti-jitter: Ignore triggers that are faster than humanly possible drum rolls
+    if (lastTriggerTimesRef.current[trackId] && (nowMs - lastTriggerTimesRef.current[trackId] < DEBOUNCE_MS)) {
+      return;
+    }
+    lastTriggerTimesRef.current[trackId] = nowMs;
+
     const ctx = audioEngine.init();
     if (!ctx) return;
     
-    // Immediate audio feedback
-    audioEngine.playInstrument(tracksRef.current[trackIdx].id);
+    // Absolute immediate audio feedback
+    audioEngine.playInstrument(trackId);
 
-    // If not playing, toggle the current quantized step instead of recording freeform
-    if (!isPlaying) {
-      handleToggleStep(trackIdx, currentStep);
+    // If not playing, toggle the quantized step visually
+    if (!isPlayingRef.current) {
+      handleToggleStep(trackIdx, currentStepRef.current);
       return;
     }
 
     const stepDuration = (60000 / bpmRef.current) / 4 / 1000;
     const loopDuration = stepDuration * TOTAL_STEPS;
-    const now = ctx.currentTime;
+    const currentTime = ctx.currentTime;
     
-    // Calculate normalized offset (0 to 1) in the loop based on absolute time
-    const elapsedSinceStart = now - loopStartAudioTimeRef.current;
+    const elapsedSinceStart = currentTime - loopStartAudioTimeRef.current;
     const offset = (elapsedSinceStart % loopDuration) / loopDuration;
 
     const newNote: FreeformNote = {
@@ -121,7 +145,7 @@ const App: React.FC = () => {
       };
       return next;
     });
-  }, [isPlaying, currentStep, handleToggleStep]);
+  }, [handleToggleStep]); // Stabilized: no longer depends on isPlaying or currentStep state
 
   // High-Precision Sequencer Engine
   useEffect(() => {
@@ -134,7 +158,7 @@ const App: React.FC = () => {
     const ctx = audioEngine.init();
     if (!ctx) return;
 
-    const scheduleLookahead = 0.1; // 100ms lookahead
+    const scheduleLookahead = 0.1;
     loopStartAudioTimeRef.current = ctx.currentTime;
 
     const scheduler = () => {
@@ -143,10 +167,9 @@ const App: React.FC = () => {
       const now = ctx.currentTime;
       const elapsedSinceStart = now - loopStartAudioTimeRef.current;
 
-      // Update the visual current step based on current playback time
-      setCurrentStep(Math.floor(elapsedSinceStart / stepDuration) % TOTAL_STEPS);
+      const currentStepIdx = Math.floor(elapsedSinceStart / stepDuration) % TOTAL_STEPS;
+      setCurrentStep(currentStepIdx);
 
-      // Schedule all steps that fall within the lookahead window
       while ( (lastStepScheduledRef.current + 1) * stepDuration < elapsedSinceStart + scheduleLookahead ) {
         const nextStep = lastStepScheduledRef.current + 1;
         const nextStepTime = nextStep * stepDuration;
@@ -156,12 +179,10 @@ const App: React.FC = () => {
         const currentLoopIndex = Math.floor(nextStep / TOTAL_STEPS);
         
         tracksRef.current.forEach(track => {
-          // 1. Schedule Quantized Grid Notes
           if (track.steps[realStepIdx]) {
             audioEngine.playInstrument(track.id, absoluteScheduleTime);
           }
           
-          // 2. Schedule Freeform Notes for this step's window
           const stepStartOffset = realStepIdx / TOTAL_STEPS;
           const stepEndOffset = (realStepIdx + 1) / TOTAL_STEPS;
           
@@ -187,6 +208,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat) return;
       const el = document.activeElement;
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
       
@@ -257,7 +279,6 @@ const App: React.FC = () => {
       </header>
 
       <main className="max-w-7xl mx-auto w-full flex flex-col gap-6 flex-grow">
-        {/* Presets Row */}
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-widest px-2">
             <Zap size={14} className="text-amber-400" />
@@ -277,7 +298,6 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Sequencer Grid Area */}
         <div className="relative bg-slate-900/40 border border-slate-800/60 rounded-3xl p-6 shadow-2xl overflow-hidden backdrop-blur-sm">
           <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 0)', backgroundSize: '40px 40px' }} />
           <SequencerGrid
@@ -292,7 +312,6 @@ const App: React.FC = () => {
           />
         </div>
 
-        {/* Performance Area (Mobile/Touch Focus) */}
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-widest px-2">
             <Smartphone size={14} className="text-emerald-400" />
@@ -304,7 +323,6 @@ const App: React.FC = () => {
           />
         </div>
 
-        {/* Sticky Controls */}
         <div className="sticky bottom-4 md:bottom-8 z-40">
           <Transport
             isPlaying={isPlaying}
