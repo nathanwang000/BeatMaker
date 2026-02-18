@@ -8,9 +8,9 @@ import PerformancePads from './components/PerformancePads';
 import { audioEngine } from './services/audioService';
 import { exportToMIDI } from './services/midiService';
 import { generateAIPattern } from './services/geminiService';
-import { Music, AlertCircle, X, Sparkles, Loader2, Keyboard, Zap, Smartphone } from 'lucide-react';
+import { Music, AlertCircle, X, Sparkles, Loader2, Keyboard, Zap, Smartphone, Trash2 } from 'lucide-react';
 
-const DEBOUNCE_MS = 65; // Minimum interval (ms) to filter out ghost-taps/jitter
+const DEBOUNCE_MS = 65; 
 
 const App: React.FC = () => {
   const [tracks, setTracks] = useState<Track[]>(INITIAL_TRACKS);
@@ -19,6 +19,7 @@ const App: React.FC = () => {
   const [bpm, setBpm] = useState(DEFAULT_BPM);
   const [selectedTrackIdx, setSelectedTrackIdx] = useState(0);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,10 +30,25 @@ const App: React.FC = () => {
   const tracksRef = useRef<Track[]>(INITIAL_TRACKS);
   const bpmRef = useRef<number>(DEFAULT_BPM);
   
-  // High-frequency refs for stable interaction callbacks
   const isPlayingRef = useRef(false);
   const currentStepRef = useRef(0);
   const lastTriggerTimesRef = useRef<Record<string, number>>({});
+
+  // Global Audio Unlocker for Mobile
+  useEffect(() => {
+    const unlockAudio = () => {
+      audioEngine.init();
+      // Only need to do this once
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
 
   useEffect(() => {
     tracksRef.current = tracks;
@@ -62,6 +78,9 @@ const App: React.FC = () => {
   }, []);
 
   const handleToggleStep = useCallback((trackIdx: number, stepIdx: number) => {
+    // Crucial for mobile: init on every tap to ensure context is alive
+    audioEngine.init();
+    
     setTracks(prev => {
       const next = [...prev];
       next[trackIdx] = {
@@ -88,7 +107,17 @@ const App: React.FC = () => {
     });
   }, []);
 
+  const handleClearAll = useCallback(() => {
+    setTracks(prev => prev.map(track => ({
+      ...track,
+      steps: Array(TOTAL_STEPS).fill(false),
+      freeformNotes: []
+    })));
+    setIsClearModalOpen(false);
+  }, []);
+
   const handleLoadPreset = (preset: BeatPreset) => {
+    audioEngine.init(); // Mobile unlock
     setBpm(preset.bpm);
     setTracks(prev => prev.map(track => {
       const newSteps = Array(TOTAL_STEPS).fill(false);
@@ -102,24 +131,21 @@ const App: React.FC = () => {
     }));
   };
 
-  // Stable callback that doesn't re-mount listeners on every clock tick
   const recordNote = useCallback((trackIdx: number) => {
     const trackId = tracksRef.current[trackIdx].id;
     const nowMs = Date.now();
     
-    // Anti-jitter: Ignore triggers that are faster than humanly possible drum rolls
     if (lastTriggerTimesRef.current[trackId] && (nowMs - lastTriggerTimesRef.current[trackId] < DEBOUNCE_MS)) {
       return;
     }
     lastTriggerTimesRef.current[trackId] = nowMs;
 
+    // Mobile: Init must happen in the synchronous event call chain
     const ctx = audioEngine.init();
     if (!ctx) return;
     
-    // Absolute immediate audio feedback
     audioEngine.playInstrument(trackId);
 
-    // If not playing, toggle the quantized step visually
     if (!isPlayingRef.current) {
       handleToggleStep(trackIdx, currentStepRef.current);
       return;
@@ -145,7 +171,7 @@ const App: React.FC = () => {
       };
       return next;
     });
-  }, [handleToggleStep]); // Stabilized: no longer depends on isPlaying or currentStep state
+  }, [handleToggleStep]); 
 
   // High-Precision Sequencer Engine
   useEffect(() => {
@@ -220,6 +246,7 @@ const App: React.FC = () => {
       
       if (e.key === ' ') {
         e.preventDefault();
+        audioEngine.init(); // Unlock on space too
         setIsPlaying(prev => !prev);
       }
     };
@@ -227,6 +254,12 @@ const App: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [recordNote, selectedTrackIdx]);
+
+  const handleTogglePlay = () => {
+    // Explicit init on the actual button click handler
+    audioEngine.init();
+    setIsPlaying(prev => !prev);
+  };
 
   const handleStop = () => {
     setIsPlaying(false);
@@ -326,16 +359,18 @@ const App: React.FC = () => {
         <div className="sticky bottom-4 md:bottom-8 z-40">
           <Transport
             isPlaying={isPlaying}
-            onTogglePlay={() => setIsPlaying(!isPlaying)}
+            onTogglePlay={handleTogglePlay}
             onStop={handleStop}
             bpm={bpm}
             onBpmChange={setBpm}
             onExport={() => exportToMIDI(tracks, bpm)}
             onOpenAI={() => setIsAIModalOpen(true)}
+            onClearAll={() => setIsClearModalOpen(true)}
           />
         </div>
       </main>
 
+      {/* AI Modal */}
       {isAIModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl">
@@ -365,6 +400,35 @@ const App: React.FC = () => {
               >
                 {isGenerating ? <><Loader2 className="animate-spin" size={20} />Analyzing...</> : <><Sparkles size={20} />Generate</>}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Confirmation Modal */}
+      {isClearModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-rose-500/10 text-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={32} />
+              </div>
+              <h2 className="text-xl font-bold mb-2">Clear Everything?</h2>
+              <p className="text-slate-400 text-sm mb-6">This will reset all 4 bars, including unquantized performance notes. You can't undo this.</p>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={handleClearAll}
+                  className="w-full py-3 bg-rose-600 hover:bg-rose-500 rounded-xl font-bold text-white transition-colors"
+                >
+                  Yes, Clear All
+                </button>
+                <button
+                  onClick={() => setIsClearModalOpen(false)}
+                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-bold text-slate-300 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
