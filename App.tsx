@@ -17,6 +17,7 @@ const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [bpm, setBpm] = useState(DEFAULT_BPM);
+  const [volume, setVolume] = useState(0.8);
   const [selectedTrackIdx, setSelectedTrackIdx] = useState(0);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
@@ -57,6 +58,10 @@ const App: React.FC = () => {
   useEffect(() => {
     bpmRef.current = bpm;
   }, [bpm]);
+
+  useEffect(() => {
+    audioEngine.setMasterVolume(volume);
+  }, [volume]);
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -363,6 +368,8 @@ const App: React.FC = () => {
             onStop={handleStop}
             bpm={bpm}
             onBpmChange={setBpm}
+            volume={volume}
+            onVolumeChange={setVolume}
             onExport={() => exportToMIDI(tracks, bpm)}
             onOpenAI={() => setIsAIModalOpen(true)}
             onClearAll={() => setIsClearModalOpen(true)}

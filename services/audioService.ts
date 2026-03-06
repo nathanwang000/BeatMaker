@@ -3,12 +3,17 @@ import { Instrument } from '../types';
 
 class AudioEngine {
   private ctx: AudioContext | null = null;
+  private masterGain: GainNode | null = null;
+  private volume: number = 0.8;
 
   init() {
     if (!this.ctx) {
       // @ts-ignore - support older webkit browsers
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       this.ctx = new AudioCtx();
+      this.masterGain = this.ctx.createGain();
+      this.masterGain.connect(this.ctx.destination);
+      this.masterGain.gain.value = this.volume;
     }
     
     // Crucial for mobile: resume context if it's suspended by the browser's auto-play policy
@@ -17,6 +22,13 @@ class AudioEngine {
     }
     
     return this.ctx;
+  }
+
+  setMasterVolume(volume: number) {
+    this.volume = Math.max(0, Math.min(1, volume));
+    if (this.masterGain && this.ctx) {
+      this.masterGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
+    }
   }
 
   isReady() {
@@ -29,7 +41,7 @@ class AudioEngine {
 
   playInstrument(inst: Instrument, scheduledTime?: number) {
     if (!this.ctx) this.init();
-    if (!this.ctx) return;
+    if (!this.ctx || !this.masterGain) return;
 
     // Ensure we are in a running state before playing
     if (this.ctx.state === 'suspended') {
@@ -61,11 +73,11 @@ class AudioEngine {
   }
 
   private playKick(time: number) {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.masterGain) return;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.masterGain);
 
     osc.frequency.setValueAtTime(150, time);
     osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
@@ -77,7 +89,7 @@ class AudioEngine {
   }
 
   private playSnare(time: number) {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.masterGain) return;
     const noise = this.ctx.createBufferSource();
     const noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.1, this.ctx.sampleRate);
     const data = noiseBuffer.getChannelData(0);
@@ -93,7 +105,7 @@ class AudioEngine {
     noiseGain.gain.setValueAtTime(1, time);
     noiseGain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
     noiseFilter.connect(noiseGain);
-    noiseGain.connect(this.ctx.destination);
+    noiseGain.connect(this.masterGain);
 
     const osc = this.ctx.createOscillator();
     osc.type = 'triangle';
@@ -102,7 +114,7 @@ class AudioEngine {
     oscGain.gain.setValueAtTime(0.7, time);
     oscGain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
     osc.connect(oscGain);
-    oscGain.connect(this.ctx.destination);
+    oscGain.connect(this.masterGain);
 
     noise.start(time);
     osc.start(time);
@@ -111,7 +123,7 @@ class AudioEngine {
   }
 
   private playHiHat(time: number, duration: number) {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.masterGain) return;
     const noise = this.ctx.createBufferSource();
     const buffer = this.ctx.createBuffer(1, this.ctx.sampleRate * duration, this.ctx.sampleRate);
     const data = buffer.getChannelData(0);
@@ -127,14 +139,14 @@ class AudioEngine {
     gain.gain.setValueAtTime(0.3, time);
     gain.gain.exponentialRampToValueAtTime(0.01, time + duration);
     filter.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.masterGain);
 
     noise.start(time);
     noise.stop(time + duration);
   }
 
   private playClap(time: number) {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.masterGain) return;
     const noise = this.ctx.createBufferSource();
     const bufferSize = this.ctx.sampleRate * 0.1;
     const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
@@ -155,14 +167,14 @@ class AudioEngine {
     gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
     
     filter.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.masterGain);
 
     noise.start(time);
     noise.stop(time + 0.2);
   }
 
   private playCowbell(time: number) {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.masterGain) return;
     const osc1 = this.ctx.createOscillator();
     const osc2 = this.ctx.createOscillator();
     osc1.type = 'square';
@@ -181,7 +193,7 @@ class AudioEngine {
     osc1.connect(filter);
     osc2.connect(filter);
     filter.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.masterGain);
 
     osc1.start(time);
     osc2.start(time);

@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, Square, Download, Wand2, Trash2, Plus, Minus, Timer } from 'lucide-react';
+import { Play, Pause, Square, Download, Wand2, Trash2, Plus, Minus, Timer, Volume2 } from 'lucide-react';
 
 interface TransportProps {
   isPlaying: boolean;
@@ -8,6 +8,8 @@ interface TransportProps {
   onStop: () => void;
   bpm: number;
   onBpmChange: (bpm: number) => void;
+  volume: number;
+  onVolumeChange: (vol: number) => void;
   onExport: () => void;
   onOpenAI: () => void;
   onClearAll: () => void;
@@ -19,6 +21,8 @@ const Transport: React.FC<TransportProps> = ({
   onStop,
   bpm,
   onBpmChange,
+  volume,
+  onVolumeChange,
   onExport,
   onOpenAI,
   onClearAll
@@ -124,6 +128,22 @@ const Transport: React.FC<TransportProps> = ({
           >
             Tap
           </button>
+
+          <div className="w-px h-8 bg-slate-700 mx-1" />
+
+          <div className="flex items-center gap-2 px-2">
+            <Volume2 size={16} className="text-slate-500" />
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={volume}
+              onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
+              className="w-16 md:w-24 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+              title={`Volume: ${Math.round(volume * 100)}%`}
+            />
+          </div>
         </div>
         
         <div className="px-2">
