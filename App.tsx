@@ -266,12 +266,6 @@ const App: React.FC = () => {
     setIsPlaying(prev => !prev);
   };
 
-  const handleStop = () => {
-    setIsPlaying(false);
-    setCurrentStep(0);
-    lastStepScheduledRef.current = -1;
-  };
-
   const handleGenerateAI = async () => {
     if (!aiPrompt.trim()) return;
     setIsGenerating(true);
@@ -365,7 +359,6 @@ const App: React.FC = () => {
           <Transport
             isPlaying={isPlaying}
             onTogglePlay={handleTogglePlay}
-            onStop={handleStop}
             bpm={bpm}
             onBpmChange={setBpm}
             volume={volume}

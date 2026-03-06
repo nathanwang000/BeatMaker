@@ -1,11 +1,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, Square, Download, Wand2, Trash2, Plus, Minus, Timer, Volume2 } from 'lucide-react';
+import { Play, Pause, Download, Wand2, Trash2, Plus, Minus, Timer, Volume2 } from 'lucide-react';
 
 interface TransportProps {
   isPlaying: boolean;
   onTogglePlay: () => void;
-  onStop: () => void;
   bpm: number;
   onBpmChange: (bpm: number) => void;
   volume: number;
@@ -18,7 +17,6 @@ interface TransportProps {
 const Transport: React.FC<TransportProps> = ({
   isPlaying,
   onTogglePlay,
-  onStop,
   bpm,
   onBpmChange,
   volume,
@@ -77,13 +75,6 @@ const Transport: React.FC<TransportProps> = ({
           title={isPlaying ? "Pause" : "Play"}
         >
           {isPlaying ? <Pause size={28} /> : <Play size={28} fill="currentColor" />}
-        </button>
-        <button
-          onClick={onStop}
-          className="w-14 h-14 flex items-center justify-center bg-slate-800 hover:bg-slate-700 active:scale-95 rounded-2xl text-slate-300 transition-all"
-          title="Stop & Reset"
-        >
-          <Square size={24} fill="currentColor" />
         </button>
       </div>
 
